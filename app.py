@@ -356,10 +356,10 @@ def search_books():
 
 
 if __name__ == "__main__":
-    df = scraping.save_to_dataframe()
+    # df = scraping.save_to_dataframe()
     with app.app_context():
         
         db.create_all()
         
-        scraping.add_to_database(db, Books, df)
+        # scraping.add_to_database(db, Books, df)
         app.run(debug=True)
