@@ -47,6 +47,9 @@ def about():
     """
     return jsonify({"message": "Olá!"})
 
+@app.route("/")
+def home():
+    return jsonify({"msg": "Hello from Flask on Vercel!"})
 
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register_user():
