@@ -11,6 +11,7 @@ class Config():
             'title' : 'Catálogo de Livros',
             'uiversion' : 3
         }
-        self.SQLALCHEMY_DATABASE_URI = 'sqlite:///database.db'
+        # self.SQLALCHEMY_DATABASE_URI = 'sqlite:///database.db'
+        self.SQLALCHEMY_DATABASE_URI = "sqlite:////tmp/database.db"
         self.SQLALCHEMY_TRACK_MODIFICATIONS = False
         self.JWT_SECRET_KEY = "1234"
