@@ -241,7 +241,7 @@ def list_categories():
 
 
 @app.route("/api/v1/books", methods=["GET"])
-@jwt_required()
+# @jwt_required()
 def list_books():
     """
     List all books (JWT Protected).
