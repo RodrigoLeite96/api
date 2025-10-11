@@ -18,7 +18,7 @@ from scraping.Scraping import Scraping
 from database.Database import Database
 from utils.Config import Config
 
-app = Flask(__name__)
+app = Flask(__name__, instance_path="/tmp/instance")
 cfg = Config()
 app.config.from_object(cfg)
 
@@ -356,10 +356,11 @@ def search_books():
 
 
 if __name__ == "__main__":
-    # df = scraping.save_to_dataframe()
+    scraping.save_to_csv()
+    df = scraping.save_to_dataframe()
     with app.app_context():
         
         db.create_all()
         
-        # scraping.add_to_database(db, Books, df)
+        scraping.add_to_database(db, Books, df)
         app.run(debug=True)
