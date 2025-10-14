@@ -4,8 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 from pandas import DataFrame
-
-from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import Session
 
 from utils.Constants import (
     BOOKS_TO_SCRAPE_URL,
@@ -151,20 +150,34 @@ class Scraping():
 
         return print(categories)
     
-    def add_to_database(self, db : SQLAlchemy, Books : SQLAlchemy, df : DataFrame):
+    def add_to_database(self, db_session: Session, Books, df: DataFrame):
         """
+        Inserts book records from a DataFrame into the database.
+        Avoids duplicates based on title.
+        ---
+        Args:
+            db_session (Session): SQLAlchemy session instance.
+            Books (Base): SQLAlchemy model class for Books.
+            df (pd.DataFrame): DataFrame with book data.
         """
+        try:
+            for _, row in df.iterrows():
+                exists = db_session.query(Books).filter(Books.title == row["title"]).first()
+                if not exists:
+                    book = Books(
+                        title=row["title"],
+                        category=row["category"],
+                        availability=row["availability"],
+                        rating=row["rating"],
+                        product_url=row["product_url"],
+                        image_url=row["image_url"],
+                    )
+                    db_session.add(book)
 
-        for _, row in df.iterrows():
-            if not Books.query.filter_by(title=row['title']).first():
-                books = Books(
-                    title=row['title'],
-                    category=row['category'],
-                    availability=row['availability'],
-                    rating=row['rating'],
-                    product_url=row['product_url'],
-                    image_url=row['image_url'],
-                )
-                db.session.add(books)
+            db_session.commit()
+            print(f"✅ Successfully added new books to database ({len(df)} rows processed).")
 
-        db.session.commit()
+        except Exception as e:
+            db_session.rollback()
+            print(f"❌ Error inserting data: {e}")
+            raise
