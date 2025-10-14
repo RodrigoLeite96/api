@@ -108,42 +108,59 @@ def get_db():
 def home():
     return jsonify({"msg": "Bem vindo ao Catálogo de Livros Pós Tech - Fiap"})
 
-@app.route("/api/v1/scraping/trigger")
+@app.route("/api/v1/scraping/trigger", methods=["POST"])
+@token_required  # Optional: protect it so only authenticated users can trigger scraping
 def trigger_scraping():
+    """
+    Trigger web scraping and save books to database.
+    ---
+    tags:
+      - Scraping
+    responses:
+      200:
+        description: Successfully scraped and saved books
+      500:
+        description: Error during scraping or database insertion
+    """
+    db_session = SessionLocal()
 
-  df = scraping.save_to_dataframe()
-  db_session = SessionLocal()
+    try:
+        # Run scraping logic (returns a DataFrame)
+        df = scraping.save_to_dataframe()
+        if df is None or df.empty:
+            return jsonify({"msg": "No data scraped"}), 400
 
-  """
-  Inserts book records from a DataFrame into the database.
-  Avoids duplicates based on title.
-  ---
-  Args:
-      db_session (Session): SQLAlchemy session instance.
-      Books (Base): SQLAlchemy model class for Books.
-      df (pd.DataFrame): DataFrame with book data.
-  """
-  try:
-      for _, row in df.iterrows():
-          exists = db_session.query(Books).filter(Books.title == row["title"]).first()
-          if not exists:
-              book = Books(
-                  title=row["title"],
-                  category=row["category"],
-                  availability=row["availability"],
-                  rating=row["rating"],
-                  product_url=row["product_url"],
-                  image_url=row["image_url"],
-              )
-              db_session.add(book)
+        inserted_count = 0
 
-      db_session.commit()
-      print(f"✅ Successfully added new books to database ({len(df)} rows processed).")
+        for _, row in df.iterrows():
+            exists = db_session.query(Books).filter(Books.title == row["title"]).first()
+            if not exists:
+                book = Books(
+                    title=row["title"],
+                    category=row["category"],
+                    availability=row["availability"],
+                    rating=row["rating"],
+                    product_url=row["product_url"],
+                    image_url=row["image_url"],
+                )
+                db_session.add(book)
+                inserted_count += 1
 
-  except Exception as e:
-      db_session.rollback()
-      print(f"❌ Error inserting data: {e}")
-      raise
+        db_session.commit()
+
+        return jsonify({
+            "msg": f"✅ Successfully added {inserted_count} new books",
+            "total_processed": len(df)
+        }), 200
+
+    except Exception as e:
+        db_session.rollback()
+        print(f"❌ Error inserting data: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        db_session.close()
+
 
 @app.route('/about')
 def about():
