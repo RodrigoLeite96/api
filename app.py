@@ -13,10 +13,60 @@ from flask_jwt_extended import (
 )
 from flasgger import Swagger
 from werkzeug.security import generate_password_hash, check_password_hash
+import joblib
+import numpy as np
+from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 from scraping.Scraping import Scraping
-from database.Database import Database
 from utils.Config import Config
+
+
+# =============================
+# 🔐 JWT CONFIGURATION
+# =============================
+JWT_SECRET = "MEUSEGREDOAQUI"
+JWT_ALGORITHM = "HS256"
+JWT_EXP_DELTA_SECONDS = 3600
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("api_modelo")
+
+# =============================
+# 🧱 DATABASE CONFIGURATION
+# =============================
+
+# ✅ Guarantee writable directory (for SQLite on Vercel)
+os.makedirs("/tmp", exist_ok=True)
+
+# ✅ Support remote DB (PostgreSQL/MySQL) or local fallback (SQLite)
+DB_URL = os.getenv("DATABASE_URL", "sqlite:////tmp/predictions.db")
+
+# ✅ Handle SQLite threading (Vercel is multithreaded)
+connect_args = {"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
+
+engine = create_engine(DB_URL, echo=False, connect_args=connect_args)
+Base = declarative_base()
+SessionLocal = sessionmaker(bind=engine)
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    username = Column(String(80), unique=True, nullable=False)
+    password = Column(String(120), nullable=False)
+
+class Books(Base):
+    __tablename__ = "books"
+    id = Column(Integer, primary_key=True)
+    title = Column(String(260), nullable=False)
+    category = Column(String(120), nullable=False)
+    availability = Column(String(120), nullable=True)
+    rating = Column(String(1000), nullable=True)
+    product_url = Column(String(1000), nullable=True)
+    image_url = Column(String(1000), nullable=True)
+
+
+Base.metadata.create_all(engine)
 
 app = Flask(__name__, instance_path="/tmp/instance")
 cfg = Config()
@@ -25,11 +75,12 @@ app.config.from_object(cfg)
 db = SQLAlchemy(app)
 jwt_manager = JWTManager(app)
 swagger = Swagger(app)
-
-User, Books = Database(db)
-
-
 scraping = Scraping()
+
+@app.route("/")
+def home():
+    return jsonify({"msg": "Bem vindo ao Catálogo de Livros Pós Tech - Fiap"})
+
 
 @app.route('/about')
 def about():
@@ -47,9 +98,6 @@ def about():
     """
     return jsonify({"message": "Olá!"})
 
-@app.route("/")
-def home():
-    return jsonify({"msg": "Hello from Flask on Vercel!"})
 
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register_user():
@@ -241,7 +289,7 @@ def list_categories():
 
 
 @app.route("/api/v1/books", methods=["GET"])
-# @jwt_required()
+@jwt_required()
 def list_books():
     """
     List all books (JWT Protected).
@@ -356,11 +404,10 @@ def search_books():
 
 
 if __name__ == "__main__":
+    
     scraping.save_to_csv()
     df = scraping.save_to_dataframe()
+
     with app.app_context():
-        
-        db.create_all()
-        
         scraping.add_to_database(db, Books, df)
         app.run(debug=True)
