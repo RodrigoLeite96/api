@@ -65,6 +65,34 @@ app.config.from_object(cfg)
 swagger = Swagger(app)
 scraping = Scraping()
 
+TEST_USERNAME = "admin"
+TEST_PASSWORD = "secret"
+
+# =============================
+# 🔑 JWT HELPERS
+# =============================
+def create_token(username):
+    payload = {
+        "username": username,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(seconds=JWT_EXP_DELTA_SECONDS)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Token ausente"}), 401
+        token = auth_header.split(" ")[1]
+        try:
+            jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token expirado"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Token inválido"}), 401
+        return f(*args, **kwargs)
+    return decorated
 # Dependency to get a session safely
 def get_db():
     db = SessionLocal()
@@ -149,259 +177,182 @@ def register_user():
         db.close()
 
 
-# @app.route("/api/v1/auth/login", methods=["POST"])
-# def login():
-#     """
-#     User login to obtain JWT token.
-#     ---
-#     tags:
-#       - Auth
-#     consumes:
-#       - application/json
-#     parameters:
-#       - in: body
-#         name: body
-#         required: true
-#         schema:
-#           type: object
-#           required:
-#             - username
-#             - password
-#           properties:
-#             username:
-#               type: string
-#               example: "rodrigo"
-#             password:
-#               type: string
-#               example: "123456"
-#     responses:
-#       200:
-#         description: Token returned
-#       401:
-#         description: Invalid credentials
-#     """
-#     data = request.get_json()
-#     user = User.query.filter_by(username=data["username"]).first()
+@app.route("/api/v1/auth/login", methods=["POST"])
+def login():
+    """
+    User login to obtain JWT token.
+    ---
+    tags:
+      - Auth
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required: [username, password]
+          properties:
+            username:
+              type: string
+              example: "rodrigo"
+            password:
+              type: string
+              example: "123456"
+    responses:
+      200:
+        description: Token returned
+      401:
+        description: Invalid credentials
+    """
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
 
-#     if not user or not check_password_hash(user.password, data["password"]):
-#         return jsonify({"error": "Invalid credentials"}), 401
+    if not username or not password:
+        return jsonify({"error": "Missing credentials"}), 400
 
-#     access_token = create_access_token(identity=user.username)
-#     return jsonify({"access_token": access_token}), 200
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user or not check_password_hash(user.password, password):
+            return jsonify({"error": "Invalid credentials"}), 401
 
-
-# @app.route("/api/v1/books/<int:book_id>", methods=["GET"])
-# @jwt_required()
-# def get_book(book_id):
-#     """
-#     Get book details by ID.
-#     ---
-#     tags:
-#       - Books
-#     parameters:
-#       - name: book_id
-#         in: path
-#         type: integer
-#         required: true
-#         description: The unique ID of the book
-#     responses:
-#       200:
-#         description: Book details successfully retrieved
-#         schema:
-#           type: object
-#           properties:
-#             id:
-#               type: integer
-#               example: 1
-#             title:
-#               type: string
-#               example: "The Great Gatsby"
-#             category:
-#               type: string
-#               example: "Classics"
-#             availability:
-#               type: string
-#               example: "In stock"
-#             rating:
-#               type: string
-#               example: "Four"
-#             product_url:
-#               type: string
-#               example: "http://books.toscrape.com/catalogue/the-great-gatsby_1/index.html"
-#             image_url:
-#               type: string
-#               example: "http://books.toscrape.com/media/cache/3e/ef/3eef99c9e.jpg"
-#       404:
-#         description: Book not found
-#         examples:
-#           application/json:
-#             error: Book not found
-#     """
-#     book = Books.query.get(book_id)
-
-#     if not book:
-#         return jsonify({"error": "Book not found"}), 404
-
-#     book_data = {
-#         "id": book.id,
-#         "title": book.title,
-#         "category": book.category,
-#         "availability": book.availability,
-#         "rating": book.rating,
-#         "product_url": book.product_url,
-#         "image_url": book.image_url,
-#     }
-
-#     return jsonify(book_data), 200
+        token = create_token(user.username)
+        return jsonify({"access_token": token}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
 
 
-# @app.route("/api/v1/categories", methods=["GET"])
-# @jwt_required()
-# def list_categories():
-#     """
-#     Get a list of all available book categories.
-#     ---
-#     tags:
-#       - Categories
-#     responses:
-#       200:
-#         description: Successfully retrieved list of categories
-#         schema:
-#           type: object
-#           properties:
-#             categories:
-#               type: array
-#               items:
-#                 type: string
-#               example: ["Classics", "Science", "Fantasy", "Mystery"]
-#       404:
-#         description: No categories found
-#         examples:
-#           application/json:
-#             msg: No categories found
-#     """
-#     categories = db.session.query(Books.category).distinct().all()
-#     categories_list = [c[0] for c in categories if c[0] is not None]
+@app.route("/api/v1/books/<int:book_id>", methods=["GET"])
+@token_required
+def get_book(book_id):
+    """
+    Get book details by ID.
+    ---
+    tags:
+      - Books
+    """
+    db = SessionLocal()
+    try:
+        book = db.query(Books).get(book_id)
+        if not book:
+            return jsonify({"error": "Book not found"}), 404
 
-#     if not categories_list:
-#         return jsonify({"msg": "No categories found"}), 404
-
-#     return jsonify({"categories": categories_list}), 200
+        return jsonify({
+            "id": book.id,
+            "title": book.title,
+            "category": book.category,
+            "availability": book.availability,
+            "rating": book.rating,
+            "product_url": book.product_url,
+            "image_url": book.image_url
+        }), 200
+    finally:
+        db.close()
 
 
-# @app.route("/api/v1/books", methods=["GET"])
-# @jwt_required()
-# def list_books():
-#     """
-#     List all books (JWT Protected).
-#     ---
-#     security:
-#       - Bearer: []
-#     tags:
-#       - Books
-#     responses:
-#       200:
-#         description: Successfully retrieved list of books
-#       401:
-#         description: Missing or invalid JWT token
-#     """
-#     books = Books.query.all()
-#     if not books:
-#         return jsonify({"msg": "No books found"}), 404
+@app.route("/api/v1/categories", methods=["GET"])
+@token_required
+def list_categories():
+    """
+    Get a list of all available book categories.
+    ---
+    tags:
+      - Categories
+    """
+    db = SessionLocal()
+    try:
+        categories = db.query(Books.category).distinct().all()
+        categories_list = [c[0] for c in categories if c[0]]
 
-#     return jsonify([
-#         {
-#             "id": b.id,
-#             "title": b.title,
-#             "category": b.category,
-#             "availability": b.availability,
-#             "rating": b.rating
-#         } for b in books
-#     ]), 200
+        if not categories_list:
+            return jsonify({"msg": "No categories found"}), 404
+
+        return jsonify({"categories": categories_list}), 200
+    finally:
+        db.close()
 
 
-# @app.route("/api/v1/books/search", methods=["GET"])
-# @jwt_required()
-# def search_books():
-#     """
-#     Search for books by title and/or category.
-#     ---
-#     tags:
-#       - Books
-#     parameters:
-#       - name: title
-#         in: query
-#         type: string
-#         required: false
-#         description: Filter books by title (case-insensitive, partial match allowed)
-#         example: "Gatsby"
-#       - name: category
-#         in: query
-#         type: string
-#         required: false
-#         description: Filter books by category (case-insensitive, partial match allowed)
-#         example: "Classics"
-#     responses:
-#       200:
-#         description: Successfully retrieved list of matching books
-#         schema:
-#           type: array
-#           items:
-#             type: object
-#             properties:
-#               id:
-#                 type: integer
-#                 example: 1
-#               title:
-#                 type: string
-#                 example: "The Great Gatsby"
-#               category:
-#                 type: string
-#                 example: "Classics"
-#               availability:
-#                 type: string
-#                 example: "In stock"
-#               rating:
-#                 type: string
-#                 example: "Four"
-#               product_url:
-#                 type: string
-#                 example: "http://books.toscrape.com/catalogue/the-great-gatsby_1/index.html"
-#               image_url:
-#                 type: string
-#                 example: "http://books.toscrape.com/media/cache/3e/ef/3eef99c9e.jpg"
-#       404:
-#         description: No books found matching the filters
-#         examples:
-#           application/json:
-#             msg: No books found
-#     """
-#     title = request.args.get("title")
-#     category = request.args.get("category")
+@app.route("/api/v1/books", methods=["GET"])
+@token_required
+def list_books():
+    """
+    List all books (JWT Protected).
+    ---
+    tags:
+      - Books
+    """
+    db = SessionLocal()
+    try:
+        books = db.query(Books).all()
+        if not books:
+            return jsonify({"msg": "No books found"}), 404
 
-#     query = Books.query
+        return jsonify([
+            {
+                "id": b.id,
+                "title": b.title,
+                "category": b.category,
+                "availability": b.availability,
+                "rating": b.rating,
+                "product_url": b.product_url,
+                "image_url": b.image_url,
+            } for b in books
+        ]), 200
+    finally:
+        db.close()
 
-#     if title:
-#         query = query.filter(Books.title.ilike(f"%{title}%"))
-#     if category:
-#         query = query.filter(Books.category.ilike(f"%{category}%"))
 
-#     results = query.all()
+@app.route("/api/v1/books/search", methods=["GET"])
+@token_required
+def search_books():
+    """
+    Search for books by title and/or category.
+    ---
+    tags:
+      - Books
+    parameters:
+      - name: title
+        in: query
+        type: string
+      - name: category
+        in: query
+        type: string
+    """
+    title = request.args.get("title")
+    category = request.args.get("category")
 
-#     if not results:
-#         return jsonify({"msg": "No books found"}), 404
+    db = SessionLocal()
+    try:
+        query = db.query(Books)
 
-#     books_list = [{
-#         "id": book.id,
-#         "title": book.title,
-#         "category": book.category,
-#         "availability": book.availability,
-#         "rating": book.rating,
-#         "product_url": book.product_url,
-#         "image_url": book.image_url
-#     } for book in results]
+        if title:
+            query = query.filter(Books.title.ilike(f"%{title}%"))
+        if category:
+            query = query.filter(Books.category.ilike(f"%{category}%"))
 
-#     return jsonify(books_list), 200
+        results = query.all()
+        if not results:
+            return jsonify({"msg": "No books found"}), 404
+
+        return jsonify([
+            {
+                "id": book.id,
+                "title": book.title,
+                "category": book.category,
+                "availability": book.availability,
+                "rating": book.rating,
+                "product_url": book.product_url,
+                "image_url": book.image_url
+            } for book in results
+        ]), 200
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
