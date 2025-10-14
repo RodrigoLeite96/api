@@ -150,34 +150,34 @@ class Scraping():
 
         return print(categories)
     
-    def add_to_database(self, db_session: Session, Books, df: DataFrame):
-        """
-        Inserts book records from a DataFrame into the database.
-        Avoids duplicates based on title.
-        ---
-        Args:
-            db_session (Session): SQLAlchemy session instance.
-            Books (Base): SQLAlchemy model class for Books.
-            df (pd.DataFrame): DataFrame with book data.
-        """
-        try:
-            for _, row in df.iterrows():
-                exists = db_session.query(Books).filter(Books.title == row["title"]).first()
-                if not exists:
-                    book = Books(
-                        title=row["title"],
-                        category=row["category"],
-                        availability=row["availability"],
-                        rating=row["rating"],
-                        product_url=row["product_url"],
-                        image_url=row["image_url"],
-                    )
-                    db_session.add(book)
+    # def add_to_database(self, db_session: Session, Books, df: DataFrame):
+    #     """
+    #     Inserts book records from a DataFrame into the database.
+    #     Avoids duplicates based on title.
+    #     ---
+    #     Args:
+    #         db_session (Session): SQLAlchemy session instance.
+    #         Books (Base): SQLAlchemy model class for Books.
+    #         df (pd.DataFrame): DataFrame with book data.
+    #     """
+    #     try:
+    #         for _, row in df.iterrows():
+    #             exists = db_session.query(Books).filter(Books.title == row["title"]).first()
+    #             if not exists:
+    #                 book = Books(
+    #                     title=row["title"],
+    #                     category=row["category"],
+    #                     availability=row["availability"],
+    #                     rating=row["rating"],
+    #                     product_url=row["product_url"],
+    #                     image_url=row["image_url"],
+    #                 )
+    #                 db_session.add(book)
 
-            db_session.commit()
-            print(f"✅ Successfully added new books to database ({len(df)} rows processed).")
+    #         db_session.commit()
+    #         print(f"✅ Successfully added new books to database ({len(df)} rows processed).")
 
-        except Exception as e:
-            db_session.rollback()
-            print(f"❌ Error inserting data: {e}")
-            raise
+    #     except Exception as e:
+    #         db_session.rollback()
+    #         print(f"❌ Error inserting data: {e}")
+    #         raise

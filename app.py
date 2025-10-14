@@ -108,6 +108,43 @@ def get_db():
 def home():
     return jsonify({"msg": "Bem vindo ao Catálogo de Livros Pós Tech - Fiap"})
 
+@app.route("/api/v1/scraping/trigger")
+def trigger_scraping():
+
+  df = scraping.save_to_dataframe()
+  db_session = SessionLocal()
+
+  """
+  Inserts book records from a DataFrame into the database.
+  Avoids duplicates based on title.
+  ---
+  Args:
+      db_session (Session): SQLAlchemy session instance.
+      Books (Base): SQLAlchemy model class for Books.
+      df (pd.DataFrame): DataFrame with book data.
+  """
+  try:
+      for _, row in df.iterrows():
+          exists = db_session.query(Books).filter(Books.title == row["title"]).first()
+          if not exists:
+              book = Books(
+                  title=row["title"],
+                  category=row["category"],
+                  availability=row["availability"],
+                  rating=row["rating"],
+                  product_url=row["product_url"],
+                  image_url=row["image_url"],
+              )
+              db_session.add(book)
+
+      db_session.commit()
+      print(f"✅ Successfully added new books to database ({len(df)} rows processed).")
+
+  except Exception as e:
+      db_session.rollback()
+      print(f"❌ Error inserting data: {e}")
+      raise
+
 @app.route('/about')
 def about():
     """
@@ -358,9 +395,9 @@ def search_books():
 if __name__ == "__main__":
     
     scraping.save_to_csv()
-    df = scraping.save_to_dataframe()
-    db_session = SessionLocal()
+    # df = scraping.save_to_dataframe()
+    # db_session = SessionLocal()
 
     with app.app_context():
-        scraping.add_to_database(db_session, Books, df)
+        # scraping.add_to_database(db_session, Books, df)
         app.run(debug=True)
