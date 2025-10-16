@@ -1,0 +1,38 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+*.env
+.envrc
+.venv.bak/
+.coverage
+.tox/
+.nox/
+.pytest_cache/
+coverage.xml
+nosetests.xml
+htmlcov/
+.ipynb_checkpoints
+.vscode/
+.idea/
+.spyproject/
+.ropeproject/
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------------------------------------------------------
+# 🧩 Environments & Configs
+# -----------------------------------------------------------------------------
+.env
+.env.*
+config.json
+config.yaml
+config.yml
+settings.json
+.notebook_checkpoint/
+__temp__/
+tmp/
+local_settings.py

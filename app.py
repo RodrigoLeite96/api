@@ -14,9 +14,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 from scraping.Scraping import Scraping
 from utils.Config import Config
 
-# =============================
-# 🔐 JWT CONFIGURATION
-# =============================
+
 JWT_SECRET = "MEUSEGREDOAQUI"
 JWT_ALGORITHM = "HS256"
 JWT_EXP_DELTA_SECONDS = 3600
@@ -24,9 +22,7 @@ JWT_EXP_DELTA_SECONDS = 3600
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api_modelo")
 
-# =============================
-# 🧱 DATABASE CONFIGURATION
-# =============================
+
 os.makedirs("/tmp", exist_ok=True)
 DB_URL = os.getenv("DATABASE_URL", "sqlite:////tmp/predictions.db")
 
@@ -35,9 +31,7 @@ engine = create_engine(DB_URL, echo=False, connect_args=connect_args)
 Base = declarative_base()
 SessionLocal = scoped_session(sessionmaker(bind=engine))
 
-# =============================
-# 🧩 MODELS
-# =============================
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
@@ -56,9 +50,7 @@ class Books(Base):
 
 Base.metadata.create_all(engine)
 
-# =============================
-# ⚙️ APP SETUP
-# =============================
+
 app = Flask(__name__, instance_path="/tmp/instance")
 cfg = Config()
 app.config.from_object(cfg)
@@ -68,15 +60,14 @@ scraping = Scraping()
 TEST_USERNAME = "admin"
 TEST_PASSWORD = "secret"
 
-# =============================
-# 🔑 JWT HELPERS
-# =============================
+
 def create_token(username):
     payload = {
         "username": username,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(seconds=JWT_EXP_DELTA_SECONDS)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
 
 def token_required(f):
     @wraps(f)
@@ -93,7 +84,8 @@ def token_required(f):
             return jsonify({"error": "Token inválido"}), 401
         return f(*args, **kwargs)
     return decorated
-# Dependency to get a session safely
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -101,31 +93,42 @@ def get_db():
     finally:
         db.close()
 
-# =============================
-# 🌐 ROUTES
-# =============================
+
 @app.route("/")
 def home():
-    return jsonify({"msg": "Bem vindo ao Catálogo de Livros Pós Tech - Fiap"})
+    return jsonify({"msg": "Bem vindo ao Catalogo de Livros Pos Tech - Fiap"})
+
 
 @app.route("/api/v1/scraping/trigger", methods=["POST"])
-@token_required  # Optional: protect it so only authenticated users can trigger scraping
+@token_required
 def trigger_scraping():
     """
-    Trigger web scraping and save books to database.
+    Trigger the scraping process and insert new books into the database.
     ---
     tags:
       - Scraping
+    security:
+      - Bearer: []
     responses:
       200:
-        description: Successfully scraped and saved books
+        description: Scraping completed successfully
+        schema:
+          type: object
+          properties:
+            msg:
+              type: string
+              example: "Successfully added 120 new books"
+            total_processed:
+              type: integer
+              example: 1000
+      400:
+        description: No data scraped
       500:
-        description: Error during scraping or database insertion
+        description: Internal error during scraping or insertion
     """
     db_session = SessionLocal()
 
     try:
-        # Run scraping logic (returns a DataFrame)
         df = scraping.save_to_dataframe()
         if df is None or df.empty:
             return jsonify({"msg": "No data scraped"}), 400
@@ -155,7 +158,7 @@ def trigger_scraping():
 
     except Exception as e:
         db_session.rollback()
-        print(f"❌ Error inserting data: {e}")
+        print(f"Error inserting data: {e}")
         return jsonify({"error": str(e)}), 500
 
     finally:
@@ -165,15 +168,19 @@ def trigger_scraping():
 @app.route('/about')
 def about():
     """
-    About endpoint
+    About endpoint.
     ---
     tags:
       - Info
     responses:
       200:
         description: Returns a simple greeting message
+        examples:
+          application/json:
+            message: "Olá!"
     """
     return jsonify({"message": "Olá!"})
+
 
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register_user():
@@ -186,7 +193,7 @@ def register_user():
       - application/json
     parameters:
       - in: body
-        name: body
+        name: user
         required: true
         schema:
           type: object
@@ -194,15 +201,17 @@ def register_user():
           properties:
             username:
               type: string
-              example: johndoe
+              example: rodrigo
             password:
               type: string
-              example: secret123
+              example: 123456
     responses:
       201:
         description: User successfully created
       400:
-        description: User already exists
+        description: Missing fields or user already exists
+      500:
+        description: Internal server error
     """
     data = request.get_json()
     username = data.get("username")
@@ -234,7 +243,7 @@ def register_user():
 @app.route("/api/v1/auth/login", methods=["POST"])
 def login():
     """
-    User login to obtain JWT token.
+    Authenticate user and return a JWT token.
     ---
     tags:
       - Auth
@@ -242,7 +251,7 @@ def login():
       - application/json
     parameters:
       - in: body
-        name: body
+        name: credentials
         required: true
         schema:
           type: object
@@ -250,15 +259,17 @@ def login():
           properties:
             username:
               type: string
-              example: "rodrigo"
+              example: rodrigo
             password:
               type: string
-              example: "123456"
+              example: 123456
     responses:
       200:
-        description: Token returned
+        description: JWT token returned
       401:
         description: Invalid credentials
+      500:
+        description: Internal server error
     """
     data = request.get_json()
     username = data.get("username")
@@ -286,12 +297,28 @@ def login():
 @token_required
 def get_book(book_id):
     """
-    Get book details by ID.
+    Retrieve a single book by its ID.
     ---
     tags:
       - Books
+    security:
+      - Bearer: []
+    parameters:
+      - name: book_id
+        in: path
+        required: true
+        type: integer
+        description: Unique book ID
+        example: 1
+    responses:
+      200:
+        description: Book details
+      404:
+        description: Book not found
     """
+
     db = SessionLocal()
+
     try:
         book = db.query(Books).get(book_id)
         if not book:
@@ -314,11 +341,27 @@ def get_book(book_id):
 @token_required
 def list_categories():
     """
-    Get a list of all available book categories.
+    List all distinct book categories.
     ---
     tags:
       - Categories
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: List of categories
+        schema:
+          type: object
+          properties:
+            categories:
+              type: array
+              items:
+                type: string
+              example: ["Classics", "Fantasy", "Science"]
+      404:
+        description: No categories found
     """
+
     db = SessionLocal()
     try:
         categories = db.query(Books.category).distinct().all()
@@ -336,10 +379,17 @@ def list_categories():
 @token_required
 def list_books():
     """
-    List all books (JWT Protected).
+    List all books.
     ---
     tags:
       - Books
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: List of all books
+      404:
+        description: No books found
     """
     db = SessionLocal()
     try:
@@ -370,14 +420,28 @@ def search_books():
     ---
     tags:
       - Books
+    security:
+      - Bearer: []
     parameters:
       - name: title
         in: query
         type: string
+        required: false
+        description: Partial match for book title
+        example: "Gatsby"
       - name: category
         in: query
         type: string
+        required: false
+        description: Partial match for book category
+        example: "Classics"
+    responses:
+      200:
+        description: Matching books returned
+      404:
+        description: No matches found
     """
+
     title = request.args.get("title")
     category = request.args.get("category")
 
@@ -412,9 +476,6 @@ def search_books():
 if __name__ == "__main__":
     
     scraping.save_to_csv()
-    # df = scraping.save_to_dataframe()
-    # db_session = SessionLocal()
 
     with app.app_context():
-        # scraping.add_to_database(db_session, Books, df)
         app.run(debug=True)

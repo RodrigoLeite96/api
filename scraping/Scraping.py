@@ -13,6 +13,14 @@ from utils.Constants import (
 )
 
 class Scraping():
+    """
+    Um scraper para o site de demonstração Books to Scrape.
+
+    Fornece métodos para:
+    • Analisar fichas e categorias de livros.
+    • Rastrear recursivamente todas as páginas de categorias.
+    • Salvar os resultados em um DataFrame ou arquivo CSV do Pandas.
+    """
 
     def __init__(self) -> None:
 
@@ -21,14 +29,49 @@ class Scraping():
 
 
     def get_soup(self, url: str) -> BeautifulSoup:
+        """
+        Busca e analisa HTML de uma URL fornecida.
+
+        Args:
+        url (str): URL da página de destino.
+
+        Return:
+        BeautifulSoup: Conteúdo HTML analisado da página.
+
+        Raise:
+        requests.exceptions.RequestException: Se a solicitação falhar.
+        """
+
         time.sleep(SLEEP)
         session = requests.Session()
         r = session.get(url, timeout=20)
         r.raise_for_status()
-        # return BeautifulSoup(r.text, "lxml")
+
         return BeautifulSoup(r.text, "html.parser")
-    # ---------- PARSERS ----------
+
+
     def parse_book_card(self, card, base_url: str, category: str) -> dict:
+        """
+        Extrai detalhes do livro de um cartão de produto individual.
+
+        Args:
+            card (Tag): A tag HTML contendo um cartão de livro.
+            base_url (str): URL da página atual para unir links relativos.
+            category (str): Nome da categoria do anúncio atual.
+
+        Returns:
+            dict: Dicionário com campos analisados:
+                {
+                    "title": str,
+                    "price": str,
+                    "availability": str,
+                    "rating": int | None,
+                    "category": str,
+                    "product_url": str,
+                    "image_url": str
+                }
+        """
+
         a = card.select_one("h3 a")
         title = a.get("title", "").strip()
         product_url = urljoin(base_url, a.get("href"))
@@ -60,24 +103,53 @@ class Scraping():
             "image_url": image_url,
         }
 
+
     def extract_category_from_listing(self, soup: BeautifulSoup, listing_url: str) -> str | None:
-        # 1) Prefer breadcrumb active item (category pages)
+        """
+        Determina o nome da categoria a partir da página de listagem.
+
+        Primeiro, verifica o elemento de trilha de navegação e retorna
+        à análise da estrutura da URL, se necessário.
+
+        Args:
+            soup (BeautifulSoup): HTML analisado da página da categoria.
+            listing_url (str): URL da página atual.
+
+        Returns:
+            str | None: O nome da categoria, se encontrado; caso contrário, None.
+        """
+
         active = soup.select_one("ul.breadcrumb li.active")
         if active:
             cat = active.get_text(strip=True)
             if cat and cat.lower() not in {"home", "books", "all products"}:
                 return cat
-        # 2) Fallback: infer from URL slug /category/books/<slug>_<id>/
+
+
         path = urlparse(listing_url).path
         if "/category/books/" in path:
             part = path.split("/category/books/", 1)[1]
-            slug = part.split("/", 1)[0]  # e.g., 'travel_2'
+            slug = part.split("/", 1)[0]
             name = slug.rsplit("_", 1)[0].replace("-", " ").strip()
             if name:
                 return name.title()
         return None
 
     def parse_category_page(self, url: str, known_category: str | None = None):
+        """
+        Analisa uma página de categoria, extraindo todos os cards de livros e o link para a próxima página.
+
+        Args:
+            url (str): URL da página da categoria a ser analisada.
+            known_category (str | None, optional): Nome da categoria predefinido. O padrão é None, nesse caso, tenta detectar automaticamente.
+
+        Returns:
+            tuple[list[dict], str | None, str]:
+            - Lista de livros (cada um como dict)
+            - URL da próxima página (se existir, caso contrário, None)
+            - Nome da categoria detectada
+        """
+
         soup = self.get_soup(url)
         category = known_category or self.extract_category_from_listing(soup, url)
 
@@ -88,10 +160,20 @@ class Scraping():
         next_url = urljoin(url, next_a["href"]) if next_a else None
         return rows, next_url, category
 
-    # ---------- CATEGORY DISCOVERY ----------
+
     def get_all_categories(self, start_url: str = BOOKS_TO_SCRAPE_URL) -> list[tuple[str, str]]:
+        """
+        Recupera todos os nomes de categorias e suas URLs da barra lateral da página inicial.
+
+        Args:
+            start_url (str, optional): URL do site principal. O padrão é BOOKS_TO_SCRAPE_URL.
+
+        Returns:
+            list[tuple[str, str]]: Lista de pares (category_name, category_url).
+        """
+
         soup = self.get_soup(start_url)
-        # Sidebar categories
+ 
         cats = []
         for a in soup.select("div.side_categories ul li ul li a"):
             name = a.get_text(strip=True)
@@ -99,12 +181,23 @@ class Scraping():
             cats.append((name, href))
         return cats
 
-    # ---------- CRAWLERS ----------
+
     def crawl_category(self, name: str, url: str) -> list[dict]:
+        """
+        Rastreia recursivamente todas as páginas dentro de uma única categoria.
+
+        Args:
+            name (str): Nome da categoria (da barra lateral ou detectado).
+            url (str): URL da categoria a partir da qual iniciar o rastreamento.
+
+        Returns:
+            list[dict]: Lista de todos os dicionários de livros dentro dessa categoria.
+        """
+        
         rows, all_rows = [], []
         while url:
             rows, url, detected = self.parse_category_page(url, known_category=name)
-            # If the sidebar name differs slightly, prefer detected (breadcrumb)
+ 
             cat_name = detected or name
             for r in rows:
                 r["category"] = cat_name
@@ -113,6 +206,16 @@ class Scraping():
         return all_rows
 
     def crawl_all_books(self, start_url: str = BOOKS_TO_SCRAPE_URL) -> list[dict]:
+        """
+        Rastreia todas as categorias do site e extrai todos os livros.
+
+        Args:
+            start_url (str, optional): URL raiz para iniciar a descoberta. O padrão é BOOKS_TO_SCRAPE_URL.
+
+        Returns:
+            list[dict]: Lista combinada de todos os livros encontrados no site.
+        """
+
         all_rows = []
         for name, url in self.get_all_categories(start_url):
             all_rows.extend(self.crawl_category(name, url))
@@ -120,6 +223,10 @@ class Scraping():
     
     def save_to_dataframe(self) -> DataFrame:
         """
+        Rastreia todas as categorias e retorna os resultados como um DataFrame do Pandas.
+
+        Returns:
+            DataFrame: Um DataFrame contendo todos os livros.
         """
 
         books = self.crawl_all_books()
@@ -129,6 +236,11 @@ class Scraping():
 
     def save_to_csv(self) -> None:
         """
+        Rastreia todas as categorias e salva os resultados em um arquivo CSV.
+        O arquivo é salvo em codificação UTF-8 com cabeçalhos e sem coluna de índice.
+
+        Returns:
+            None
         """
 
         books = self.crawl_all_books()
@@ -149,35 +261,3 @@ class Scraping():
             categories.append(name)
 
         return print(categories)
-    
-    # def add_to_database(self, db_session: Session, Books, df: DataFrame):
-    #     """
-    #     Inserts book records from a DataFrame into the database.
-    #     Avoids duplicates based on title.
-    #     ---
-    #     Args:
-    #         db_session (Session): SQLAlchemy session instance.
-    #         Books (Base): SQLAlchemy model class for Books.
-    #         df (pd.DataFrame): DataFrame with book data.
-    #     """
-    #     try:
-    #         for _, row in df.iterrows():
-    #             exists = db_session.query(Books).filter(Books.title == row["title"]).first()
-    #             if not exists:
-    #                 book = Books(
-    #                     title=row["title"],
-    #                     category=row["category"],
-    #                     availability=row["availability"],
-    #                     rating=row["rating"],
-    #                     product_url=row["product_url"],
-    #                     image_url=row["image_url"],
-    #                 )
-    #                 db_session.add(book)
-
-    #         db_session.commit()
-    #         print(f"✅ Successfully added new books to database ({len(df)} rows processed).")
-
-    #     except Exception as e:
-    #         db_session.rollback()
-    #         print(f"❌ Error inserting data: {e}")
-    #         raise
