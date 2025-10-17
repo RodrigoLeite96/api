@@ -1,32 +1,29 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
 *.py[cod]
-
-# C extensions
+*$py.class
 *.so
-
-# Distribution / packaging
-bin/
-build/
-develop-eggs/
-dist/
-eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Installer logs
+.venv/
+venv/
+env/
+ENV/
+*.env
+.conda/
+condaenv.*
+.ipynb_checkpoints/
+*.ipynb_convert/
+*.nbconvert.ipynb
+*.manifest
+*.spec
 pip-log.txt
 pip-delete-this-directory.txt
-
-# Unit test / coverage reports
+htmlcov/
 .tox/
+.nox/
 .coverage
+.coverage.*
 .cache
 nosetests.xml
 coverage.xml
+*.cover
+*.py,cover
+*.pytest_cache/
+cover/
